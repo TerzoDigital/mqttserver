@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - 1883:1883   # MQTT without TLS
+      - 8883:8883   # MQTT with TLS
+      - 9001:9001   # MQTT over Websockets
+    volumes:
+      - ./config:/mosquitto/config
+      - ./certs:/mosquitto/certs
+      - ./data:/mosquitto/data
+      - ./log:/mosquitto/log
+    user: mosquitto
+    networks:
+      - mosquitto
+
+networks:
+  mosquitto:
+    name: mosquitto
+    driver: bridge
+
