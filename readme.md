@@ -31,7 +31,7 @@ After checking out this repo and changing into the checked out folder, do the fo
 
 ```
 sudo chown 1883:1883 config/*
-chmod +x generate-certs.sh
+chmod +x *.sh
 sudo chown 1883:1883 certs/*
 mkdir data
 chmod 777 data

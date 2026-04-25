@@ -1,4 +1,5 @@
-#!/bin/bash 
+#!/bin/bash
+
 set -e
 
 CERTS_DIR="./certs"
