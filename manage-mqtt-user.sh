@@ -2,7 +2,7 @@
 
 # --- CONFIG ---
 SERVICE_NAME="mosquitto"                # service name in docker-compose.yml
-COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE="compose.yml"
 PASSWD_FILE_HOST="./config/passwd_file" # host path (mounted volume)
 PASSWD_FILE_CONTAINER="/mosquitto/config/passwd_file"
 
@@ -20,37 +20,45 @@ PASSWORD=$3
 
 # --- CHECK COMPOSE FILE ---
 if [ ! -f "$COMPOSE_FILE" ]; then
-  echo "❌ docker-compose.yml not found."
+  echo "❌ compose.yml not found."
   exit 1
 fi
 
-# --- ENSURE IMAGE IS PRESENT ---
-echo "🔍 Ensuring Mosquitto image is available..."
-docker compose -f "$COMPOSE_FILE" pull "$SERVICE_NAME"
+# --- CHECK IF CONTAINER IS RUNNING ---
+echo "🔍 Checking container state..."
 
-if [ $? -ne 0 ]; then
-  echo "❌ Failed to pull image."
-  exit 1
+RUNNING=$(docker compose -f "$COMPOSE_FILE" ps --status running -q "$SERVICE_NAME")
+
+if [ -n "$RUNNING" ]; then
+  echo "✅ Container already running (ID: $RUNNING)"
+  CONTAINER_ID="$RUNNING"
+else
+  echo "⚠️ Container not running. Ensuring image + starting..."
+
+  # Pull image only if needed (safe to call regardless, but we skip when already running)
+  docker compose -f "$COMPOSE_FILE" pull "$SERVICE_NAME"
+  if [ $? -ne 0 ]; then
+    echo "❌ Failed to pull image."
+    exit 1
+  fi
+
+  # Start/create container
+  docker compose -f "$COMPOSE_FILE" up -d "$SERVICE_NAME"
+  if [ $? -ne 0 ]; then
+    echo "❌ Failed to start container."
+    exit 1
+  fi
+
+  # Get container ID
+  CONTAINER_ID=$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE_NAME")
+
+  if [ -z "$CONTAINER_ID" ]; then
+    echo "❌ Could not determine container ID."
+    exit 1
+  fi
+
+  echo "✅ Container started (ID: $CONTAINER_ID)"
 fi
-
-# --- START/CREATE CONTAINER ---
-echo "🚀 Ensuring container is running..."
-docker compose -f "$COMPOSE_FILE" up -d "$SERVICE_NAME"
-
-if [ $? -ne 0 ]; then
-  echo "❌ Failed to start container."
-  exit 1
-fi
-
-# --- GET CONTAINER ID ---
-CONTAINER_ID=$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE_NAME")
-
-if [ -z "$CONTAINER_ID" ]; then
-  echo "❌ Could not find running container."
-  exit 1
-fi
-
-echo "✅ Container is running (ID: $CONTAINER_ID)"
 
 # --- ENSURE PASSWORD FILE EXISTS ---
 if [ ! -f "$PASSWD_FILE_HOST" ]; then
