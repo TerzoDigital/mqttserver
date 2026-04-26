@@ -6,15 +6,19 @@ The MQTT server used is the latest version of Eclipse Mosquitto v2. The docker c
 
 A useful resource for configuration of the Mosquitto server is [this Cedalo document](https://cedalo.com/blog/mosquitto-docker-configuration-ultimate-guide/).
 
-# File description
+# File descriptions
 
 The following files are included in the folder:
 
-- **docker-compose.yml** A docker compose file to create the docker machine.
+- **compose.yml** A docker compose file to create the docker machine.
 - **generate-certs.sh** A script to generate certificates within a *certs* folder.
+- **initial-setup.sh** A script to perform the initial setup of the MQTT server.
+- **manage-mqtt-user.sh** A script to allow the addition or removal of MQTT users.
 - **readme.md** This file.
 - **config/mosquitto.conf** The Mosquitto configuration file.
 - **config/passwd_file** A password file for the Mosquitto broker.
+
+# Initial password file settings
 
 The password file contains a single entry:
 
@@ -23,31 +27,46 @@ The password file contains a single entry:
 
 # Running the Docker machine
 
-The instructions below assume that the git repository is checked out to a Linux machine.
+The instructions below assume that the git repository is checked out/cloned to an Ubuntu Linux machine.
 
 ## Quick setup
 
-After checking out this repo and changing into the checked out folder, do the following:
+After checking out/cloning this repo and changing into the checked out/cloned folder, do the following:
 
 ```
-sudo chown 1883:1883 config/*
-chmod +x *.sh
-sudo chown 1883:1883 certs/*
-mkdir data
-chmod 777 data
-mkdir log
-chmod 777 log
-docker-compose up -d
+./initial-setup.sh
+docker compose up -d
 ```
-After this the docker machine will be running as "mosquitto". To check the machine is running:
+The initial-setup.sh script performs actions to setup the docker machine and supporting folders for first use. These actions include:
+
+- Creating a CA and certificates for use by the broker and clients.
+- Creating data and log folders to support the docker machine when running.
+- Altering ownership and permissions to the supporting folders to ensure they are accessible.
+
+After this a docker machine, as specified by the compose.yml file, is created and run. Please note the following about that machine:
+
+- The container is called "mosquitto".
+- The service being run is also called "mosquitto".
+- Once the service is started, Docker will keep the service running unless it is deliberately stopped. This includes restarting the service after the host machine is restarted.
+- The MQTT server is listening on ports 1883 (MQTT without TLS) and 8883 (MQTT with TLS).
+- The MQTT server is also listening on port 9001 (MQTT over WebSockets) but this has not been tested.
+- MQTT access must be authenticated and out of the box the user and password shown [above](#initial-password-file-settings) are used.
+- For MQTT using TLS, a CA with locally signed ceryificates for the broker and client are set up. See [below]() for more information on this.
+
+## Managing the Docker machine
+
+To check whether the machine and service are running:
 ```
-docker ps
+docker compose ps
 ```
+> [!TIP]
+>Pay attention to the time the machine has been running for, this should reflect the time since the machine was started. If there are configuration issues, then the machine may keep restarting!
+
 To view the logs of the machine:
 ```
-docker-compose logs -f mosquitto
+docker compose logs -f mosquitto
 ```
-Using CTRL-C to end the follow of the logs. Or do not use the -f if you do not want to follow.
+Using *CTRL-C* to end the follow of the logs. Or do not use the -f if you do not want to follow.
 
 To examine the logs, change config files or view certificates on the docker container, log onto the container with:
 ```
@@ -57,123 +76,43 @@ Use "exit" at the shell prompt to return to the host.
 
 To close down the machine use:
 ```
-docker-compose down
+docker compose down
 ```
+To run the docker machine use the following. This will create a docker machine called "mosquitto" and immediately detach from the machine (using the *-d* option), allowing you to continue at the prompt.
+```
+docker compose up -d
+```
+If you leave the *-d* option off the command, as shown below:
+```
+docker compose up
+```
+You will remain attached to the docker machine following the logs being produced by the machine. This can be useful for debugging issues. 
 
-## Setting up a passwd_file and an initial configuration
+## Changing the broker configuration
 
-The passwd_file which is in the git repository is normally held on the hosts file system and shared with the docker machine through a volume. This brings two possible problems:
+The broker is configured through the *config/mosquitto.conf* file. The contents of the text file are described on the [Mosquitto manual page](https://mosquitto.org/man/mosquitto-conf-5.html). They may be edited from the host using the command:
+```
+sudo nano config/mosquitto.conf
+```
+The use of *sudo* is required as the ownership of the file is set to 1883 and not the current user. Replace *nano* with the editor of your choice if *nano* is not your preferred editor.
 
-1. **Permissions**, the files on the host need the correct permissions to allow the mqtt broker on the host to use them.
-2. **Creation using correct version of utilities**, the passwd_file needs to be compatible with the version of Mosquitto in the docker machine.
+## Adding and deleting MQTT users
 
-The docker machine created from the Mosquitto image includes a user and group with ID 1883. To ensure permissions are OK use the following commands in the host.
+The unchanged code from Github, is configured to use authentication with the user and password shown [above](#initial-password-file-settings). Authentication is configured for use through the line below which appears in the *mosquitto.conf* file.
+```
+allow_anonymous false
+```
+Changing *false* to *true* would permit anaonymous access to the broker. Assuming you continue to use authentication, it is possible to add or delete users for the broker using the supplied script. To add another user use:
+```
+./manage-mqtt-user.sh add username password
+```
+Where *username* is the name of the user you wish to add, and *password* is the password they should be added with.
 
+To delete a user use the following:
 ```
-sudo chown 1883:1883 filename
+./manage-mqtt-user.sh delete username
 ```
-
-If you want to create a different password file then you can follow the instructions below. These create a temporary docker image, creates the password file in there and then copies it out to a new passwd_file ready for use in the docker machine through docker-compose. 
-
-- Checkout the current repo
-- Change into the checked out folder
-- Delete config/mosquitto.conf
-- Delete config/passwd_file
-- Touch config/mosquitto.conf to get an empty configuration file
-- correct permissions with
-```
-sudo chown 1883:1883 config/mosquitto.conf
-```
-- Run up the docker machine with the blank configuration file where path is replace with the relevant path for your machine.
-```
-docker run -it -d --name mos1 -p 1883:1883 -v $HOME/path/config/mosquitto.conf:/mosquitto/config/mosquitto.conf eclipse-mosquitto:2
-```
-- Log into the docker machine as mosquitto using
-```
-docker exec -it -u 1883 mos1 sh
-```
-- Create a password file using the below and replacing user_name with the name of your choice
-```
-mosquitto_passwd -c /mosquitto/passwd_file user_name
-```
-- Copy the contents of the new passwd_file
-- Exit the docker machine
-- in the config folder touch passwd_file
-- Edit the passwd_file and paste in the contents from the docker machine that you copied
-- Dispose of the docker machine and then remove it with
-```
-docker stop mos1
-docker container rm mos1
-```
-- Restore the original configuration file using
-```
-git checkout -- config/mosquitto.conf
-```
-- Correct file permissions with
-```
-sudo chown 1883:1883 config/mosquitto.conf
-sudo chown 1883:1883 config/passwd_file
-```
-- Run the docker machine using docker-compose as described elsewhere in this file.
-
-## Creating certificates in support of the Mosquitto broker
-
-If the generate-certs.sh file has just been checked out of git, you may need to alter the permissions of the file so that it can be executed. Use the following to do that:
-
-```
-chmod +x generate-certs.sh
-```
-
-Run the script using the following command:
-
-```
-./generate-certs.sh
-```
-
-This will generate the following files in a certs folder, which will be created if it does not already exist.
-
-- **ca.crt** The CA certificate.
-- **ca.key** The CA private key.
-- **ca.srl** The CA serial file
-- **server.crt** The server certificate (signed by the CA)
-- **server.key** The server private key
-- **client.crt** An example client certificate (signed by the CA)
-- **client.key** An example server private key
-
-Note that a single client key and certificate are generated, ready for use by one client in mutual TLS (mTLS). For more clients, use the instructions within the file to generate more certificates.
-
-## Turning on and off Mutual TLS (mTLS)
-
-To turn on and off Mutual TLS uncomment or comment the following lines in "config/mosquitto.conf":
-
-```
-require_certificate true
-use_identity_as_username false
-```
-
-When require_certificate is set to true, then all clients must produce vaid certificates to connect to the broker. This is mutual TLS authentication.
-
-Note that if *use_identity_as_username* is set to true, then the CN from the certificate will be used as the username.
-
-## Running and checking the machine
-
-To run the docker machine use the following. This will create a docker machine called "mosquitto".
-
-```
-docker-compose up -d
-```
-
-To stop the docker machine use the following. This will stop the machine and delete the create container.
-
-```
-docker-compose down
-```
-
-Whilst the machine is running use the following to view the logs the broker is producing. To stop following the logs press *CTRL-C*.
-
-```
-docker-compose logs -f mosquitto
-```
+Where *username* is the name of the user you wish to delete.
 
 ## Testing the broker
 
@@ -188,4 +127,92 @@ Subscription can be tested using
 mosquitto_sub -i mos_sub1 -t "MyTopic" -u user1 -P Elephant1 -d
 ```
 In all of the above MyTopic should be replaced with the topic you want to use. MyMessage should be replaced with the message you wish to send. The username "user1" and password "Elephant1" are the defaults for the repo and should be replaced with other values if you have changed them.
+
+## Using TLS with the broker
+
+### Forcing the use of TLS
+
+To force the broker to only use a TLS method of connection, it is necessary to remove the listener for the non-TLS mode of connection. To do this comment our or remove the following line from the *mosquitto.conf* file.
+```
+listener 1883
+``` 
+To comment this line out place a # at the start of the line.
+
+### Using TLS with locally generated certificates
+
+During the execution of the *initial-setip.sh* script, another script *generate-certs.sh* is run to fo the following:
+
+- Create a local CA (Certificate Authority)
+- Create a key pair for the broker and a certificate signed by the CA
+- Create a key pair for a client and a certificate signed by the CA
+
+The *generate-certs.sh* script is fairly self explanatory. You can examine and modify the script to meet your own ends. It will for example show the Common Names CNs used for the various created certificates. For example, the client certificate has the CN *test-client*.
+
+After execution the *generate-certs.sh* script will generate the following files in a certs folder, which will be created if it does not already exist.
+
+- **ca.crt** The CA certificate.
+- **ca.key** The CA private key.
+- **ca.srl** The CA serial file
+- **server.crt** The server certificate (signed by the CA)
+- **server.key** The server private key
+- **client.crt** An example client certificate (signed by the CA)
+- **client.key** An example client private key
+
+Note that a single client key and certificate are generated, ready for use by one or more clients in mutual TLS (mTLS). More client certificates and keys can be generated by using the instructions within the script file to generate more certificates.
+
+> [!NOTE]
+>When the *initial-setup.sh* script is run it will leave all certificates and keys with the right ownership and permissions for use by the broker within the Docker machine. If new certificates or keys are generated by running commands manually or via rerunning the *generate-certs.sh* script again, it will be necessary to alter the ownership and permissions again. See [this section](#issues-in-initial-setup) for advice on how to do that.
+
+To enable an MQTT client to use mTLS do the following:
+
+- Make the CA certificate (*ca.crt*) available to the client.
+- Make the client private key (*client.key*) available to the client.
+- Make the client certificate (*client.crt*) available to the client.
+
+How these files are 'made available' will depend on the specific client.
+
+### Using TLS with a publically signed certificate
+
+### Turning on and off mutual TLS (mTLS)
+
+TLS can be single ended (where the server provides a certificate to the client which permits the client and server to create a secure connection) or double ended (where the server provides a certificate and the cient provides a certificate). Double ended is known as mutual TLS or mTLS.
+
+To turn on and off mutual TLS ensure the following line appears uncommented in "config/mosquitto.conf":
+
+```
+require_certificate true
+```
+
+When *require_certificate* is set to *true*, then all clients must produce valid certificates to connect to the broker. This is mutual TLS authentication. When *require_certificate* is set to *false* then only the server will provide the certificate.
+
+> [!NOTE]
+>Normal TLS and mTLS are used over port 8883. Connections made over port 1883, do not use TLS or mTLS.
+
+### Taking the username from the client certificate
+
+There are a number of options which permit the username or client ID used by the broker during logon to be taken from the certificate, ignoring any provided at logon. Use the following to get the CN (Common Name) specified in the certificate to be used as the username for logon:
+
+```
+use_identity_as_username true
+```
+
+You can read more about this on the [Mosquitto manual page](https://mosquitto.org/man/mosquitto-conf-5.html) and in this [useful article](http://www.steves-internet-guide.com/creating-and-using-client-certificates-with-mqtt-and-mosquitto/).
+
+## Issues in initial setup
+
+To make initial setup easier the script *initial-setup.sh* is provided. This section discusses some of the issues that the script tries to address. The section is provided as extra information to help with further configuration of the broker.
+
+The *passwd_file* and *mosquitto.conf* file, which are in the git repository, are accessible on the hosts file system and shared with the docker machine through a volume. This brings two possible problems:
+
+1. **Permissions**, the files on the host need the correct permissions to allow the mqtt broker on the host to use them.
+2. **Creation using correct version of utilities**, the files need to be compatible with the version of Mosquitto in the docker machine. Although this is less of a problem for the *mosquitto.conf* file it is important that the *passwd_file* is created using the correct version of Mosquitto.
+
+The docker machine created from the Mosquitto image includes a user and group with ID 1883. To ensure permissions are OK, the user and group for the files or folders within the host are set to 1883 and 1883 using a command like the following:
+```
+sudo chown 1883:1883 filename
+```
+To change the permiisions and ownership of all files within a folder and the folder itself use:
+```
+sudo chown -R 1883:1883 foldername
+```
 
