@@ -51,7 +51,7 @@ After this a docker machine, as specified by the compose.yml file, is created an
 - The MQTT server is listening on ports 1883 (MQTT without TLS) and 8883 (MQTT with TLS).
 - The MQTT server is also listening on port 9001 (MQTT over WebSockets) but this has not been tested.
 - MQTT access must be authenticated and out of the box the user and password shown [above](#initial-password-file-settings) are used.
-- For MQTT using TLS, a CA with locally signed ceryificates for the broker and client are set up. See [below]() for more information on this.
+- For MQTT using TLS, a CA with locally signed certificates for the broker and client are set up. See [below](#using-tls-with-locally-generated-certificates) for more information on this.
 
 ## Managing the Docker machine
 
@@ -102,31 +102,39 @@ The unchanged code from Github, is configured to use authentication with the use
 ```
 allow_anonymous false
 ```
-Changing *false* to *true* would permit anaonymous access to the broker. Assuming you continue to use authentication, it is possible to add or delete users for the broker using the supplied script. To add another user use:
+Changing *false* to *true* would permit anaonymous access to the broker. Assuming you continue to use authentication, it is possible to add or delete users for the broker using the supplied script. To add a user use:
 ```
 ./manage-mqtt-user.sh add username password
 ```
 Where *username* is the name of the user you wish to add, and *password* is the password they should be added with.
 
-To delete a user use the following:
+To delete a user use:
 ```
 ./manage-mqtt-user.sh delete username
 ```
 Where *username* is the name of the user you wish to delete.
 
+In both cases, the script will alter the *config/passwd-file* by using a mosquitto command within the docker client.
+
 ## Testing the broker
 
 To test the broker is working, try using MQTT explorer and setting up the relevant connection details.
 
-From the command line within the container one can test publication using
+From the command line within the container one can test publication using:
 ```
 mosquitto_pub -i mos_pub1 -t "MyTopic" -m "MyMessage" -u user1 -P Elephant1 
 ```
-Subscription can be tested using
+Subscription can be tested using:
 ```
 mosquitto_sub -i mos_sub1 -t "MyTopic" -u user1 -P Elephant1 -d
 ```
 In all of the above MyTopic should be replaced with the topic you want to use. MyMessage should be replaced with the message you wish to send. The username "user1" and password "Elephant1" are the defaults for the repo and should be replaced with other values if you have changed them.
+
+Access to the command line in the broker can be achieved using the following command from the docker host:
+```
+docker exec -it -u 1883 mosquitto sh
+```
+Use "exit" at the shell prompt to return to the host once you have completed testing.
 
 ## Using TLS with the broker
 
@@ -138,9 +146,36 @@ listener 1883
 ``` 
 To comment this line out place a # at the start of the line.
 
+### Turning on and off mutual TLS (mTLS)
+
+TLS can be single ended or double ended. Single ended TLS can be known as Standard TLS. Double ended is known as mutual TLS or mTLS. mTLS offers security advantages over Standard TLS. mTLS is a key part of a zero trust architecture.
+
+In Standard TLS only the server needs to provide a certificate to the client. The identity of the server is validated by the client and a secure and encrypted communications session is set up using the credentials provided by the validated server. In mTLS, both the server and the client must provide certificates to each other, the cleint once again validates the server, but in mTLS the server also validates the client. This is much more secure that Standard TLS. 
+
+To turn on and off mTLS ensure the following line appears uncommented in "config/mosquitto.conf":
+
+```
+require_certificate true
+```
+
+When *require_certificate* is set to *true*, then all clients must produce valid certificates to connect to the broker. This is mutual TLS authentication. When *require_certificate* is set to *false* then only the server will provide the certificate.
+
+> [!NOTE]
+>Normal TLS and mTLS are used over port 8883. Connections made over port 1883, do not use TLS or mTLS. To ensure full security remember to disable the Non TLS port 1883 as described [above](#forcing-the-use-of-tls).
+
+### Taking the username from the client certificate
+
+There are a number of options which permit the username or client ID used by the broker during logon to be taken from the certificate, ignoring any provided at logon. Use the following to get the CN (Common Name) specified in the certificate to be used as the username for logon:
+
+```
+use_identity_as_username true
+```
+
+You can read more about this on the [Mosquitto manual page](https://mosquitto.org/man/mosquitto-conf-5.html) and in this [useful article](http://www.steves-internet-guide.com/creating-and-using-client-certificates-with-mqtt-and-mosquitto/).
+
 ### Using TLS with locally generated certificates
 
-During the execution of the *initial-setip.sh* script, another script *generate-certs.sh* is run to fo the following:
+During the execution of the *initial-setip.sh* script, the script *generate-certs.sh* is also run. This sets up the broker to use locally generated certificates and provides all the relevant files to do that. Specifically it does the following:
 
 - Create a local CA (Certificate Authority)
 - Create a key pair for the broker and a certificate signed by the CA
@@ -173,30 +208,84 @@ How these files are 'made available' will depend on the specific client.
 
 ### Using TLS with a publically signed certificate
 
-### Turning on and off mutual TLS (mTLS)
+Locally signed certificates may be the preferred option for some users who wish to be in full control of their PKI (Private Key Infrastructure). In some cases though, users may wish to use publically signed certificates. These are certificates which are signed through a chain of CAs (Certificate Authorities) where the head of that chain is a publically well known and trusted CA. The certificates for such trusted CAs are often built into operating systems. To validate the certificate being offered, a system checks that the certificate is correctly signed by its CA, that the CAs ceritificate is correctly signed by the next CAs certificate, and so on until the last certificate is the one built into the operating system. This is exactly how secure web pages (HTTPS) work with your browser, although there is a host of detail missing from the description above! Suffice to say that users may select to use a publically signed certificate and this section describes how that can be done.
 
-TLS can be single ended (where the server provides a certificate to the client which permits the client and server to create a secure connection) or double ended (where the server provides a certificate and the cient provides a certificate). Double ended is known as mutual TLS or mTLS.
+Although there are many ways in which a publically signed certificate could be acquired, this section explains how that can be done through [LetsEncrypt](https://letsencrypt.org/) using the [Certbot](https://certbot.eff.org/) mechanism and proving that we are who we say we are by altering a DNS record in our controlled domain. So note that this method is for public signed and internet based operation. No cost is involved in this process as LetEncrypt and Certbot are freely provided in an effort to enhance security on the internet.
 
-To turn on and off mutual TLS ensure the following line appears uncommented in "config/mosquitto.conf":
+The use of publically signed certificates is most prevalent in the web space, so many article describing how to acquire a certificate concentrate on that aspect. In this case we need the certificate for an MQTT server and so there are some small differeneces to that normal procedure. Bearing this in mind a number of sources have been used to determine the method of acquiring a publically signed certificate through LetsEncrypt. They are:
 
+- The [LetsEncrypt Getting Started Page](https://letsencrypt.org/getting-started/). This page is heavily web focussed but does include links to the LetsEncrypt documentation and the Certbot ACME client.
+- The [Certbot User Guide](https://eff-certbot.readthedocs.io/en/stable/using.html).
+- A [blog article from Steve Cope](http://www.steves-internet-guide.com/using-lets-encrypt-certificate-mosquitto/) on using a LetsEncrypt certificate on Mosquitto.
+- A [blog article by Besnik Belegu](https://medium.com/@besnikbelegu/enabling-tls-for-mosquitto-using-lets-encrypt-and-certbot-bf10bc863db) relating to the configuration of TLS for MQTT Mosquitto using LetsEncrypt and certbot.
+
+Based on the articles above, the following method was derived to enable the use of a publically signed certificate for the MQTT server as setup by this repository. To follow the method below you will have to meet the following pre-requisites:
+
+1. You are the owner of a domain and have access to DNS management for that domain. In this example we will use "example.co.uk"
+2. You have exposed your MQTT broker through a URL based on the domain you own. So, in this example, you may have made your MQTT broker visible through "mqtt.example.co.uk". You will likely have done so, by creating a DNS A record mapping that name "mqtt.example.co.uk" to the IP or URL of the server hosting the broker.
+
+#### Acquire a certificate
+
+1. Log on to the Docker host. This is assumed to be an Ubuntu distribution. The key will be obtained by this machine and used by the MQTT server in the Docker machine to prove its identity.
+2. Ensure the machine is up to date. Normally this would mean running commands like:
 ```
-require_certificate true
+sudo apt update
+sudo apt upgrade
 ```
-
-When *require_certificate* is set to *true*, then all clients must produce valid certificates to connect to the broker. This is mutual TLS authentication. When *require_certificate* is set to *false* then only the server will provide the certificate.
-
-> [!NOTE]
->Normal TLS and mTLS are used over port 8883. Connections made over port 1883, do not use TLS or mTLS.
-
-### Taking the username from the client certificate
-
-There are a number of options which permit the username or client ID used by the broker during logon to be taken from the certificate, ignoring any provided at logon. Use the following to get the CN (Common Name) specified in the certificate to be used as the username for logon:
-
+3. Install certbot
 ```
-use_identity_as_username true
+sudo apt-get -y install certbot
 ```
+4. Use Certbot to generate a certificate using the DNS Method. **NOTE: You will have to replace "mqtt.example.co.uk" in the command below with the name you have selected for your broker**
+```
+sudo certbot certonly --manual --preferred-challenge dns -d mqtt.example.co.uk
+```
+5. During the creation of the certificate you will be asked to generate a DNS TEXT record related to the name you have selected for your broker. This is to prove to Certbot that you have control and therefore own that domain.
+6. On completion, you should receive a message something like the following, where mqtt.example.co.uk will be replaced with the domain name you selected for your broker and the expiry date will be different:
+```
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/mqtt.example.co.uk/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/mqtt.example.co.uk/privkey.pem
+This certificate expires on 2026-07-26.
+These files will be updated when the certificate renews.
 
-You can read more about this on the [Mosquitto manual page](https://mosquitto.org/man/mosquitto-conf-5.html) and in this [useful article](http://www.steves-internet-guide.com/creating-and-using-client-certificates-with-mqtt-and-mosquitto/).
+NEXT STEPS:
+- This certificate will not be renewed automatically. Autorenewal of --manual certificates requires the use of an authentication hook script (--manual-auth-hook) but one was not provided. To renew this certificate, repeat this same certbot command before the certificate's expiry date.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+``` 
+7. The files mentioned in the messages above are actually links to the real files which are stored in the *archive* folder and not the *live* folder. There are also a couple of other files created that can be used. This is all discussed in the [Certbot manual](https://eff-certbot.readthedocs.io/en/stable/using.html#where-are-my-certificates). To avoid permissions problems copy those real files to the certs directory of our mqtt instance. **NOTE: Remember to change *mqtt.example.co.uk* to be the domain name you have used in both commands. The commands below assume you are running from inside the foler you checked out from Github.**
+```
+sudo cp /etc/letsencrypt/archive/mqtt.example.co.uk/fullchain1.pem certs/
+sudo cp /etc/letsencrypt/archive/mqtt.example.co.uk/privkey1.pem certs/
+```
+8. Then change their ownership and permissions to make them useable by Mosquitto within the Docker machine.
+```
+sudo chown 1883:1883 certs/*.pem
+```
+9. Change the *mosquitto.conf* file to point to the relevant files.
+```
+sudo nano config/mosquitto.conf
+```
+10. After modification the *mosquitto.conf* file should contain the following around the defintiion of the port 8883 listener. Note that the cafile has been left at the generated file, meaning that if client authentication is turned on () then the generated client certificates should be used. Whilst the certificate file presented by the broker is the publically signed *fullchain1.pem* and the private key used by the broker in negotiating the encrypted channel with the client is in *privkey1.pem*:
+```
+# TLS listener on port 8883
+listener 8883
+cafile /mosquitto/certs/ca.crt
+certfile /mosquitto/certs/fullchain1.pem
+keyfile /mosquitto/certs/privkey1.pem
+```
+11. Finally restart the broker to start using the new details:
+```
+docker compose restart mosquitto
+```
+>[!WARNING]
+>The certificates generated above will expire! The exprity date is given in the message you receive back from Certbot. You will need to rerun the same command before the expiry date to ensure that a valid certificate is available, you will also need to recopy the updated certificates to the certs folder as instructed above. A further update to this readme file will address how we can deal with expiring certificates.
+
 
 ## Issues in initial setup
 
