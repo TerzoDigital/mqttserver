@@ -53,6 +53,9 @@ After this a docker machine, as specified by the compose.yml file, is created an
 - MQTT access must be authenticated and out of the box the user and password shown [above](#initial-password-file-settings) are used.
 - For MQTT using TLS, a CA with locally signed certificates for the broker and client are set up. See [below](#using-tls-with-locally-generated-certificates) for more information on this.
 
+> [!WARNING]
+>The username and password displayed above are useful for getting off the ground. However, as they are openly available on this page, it is strongly suggested that a new user and password are created and the user1 user deleted once you are comfortabel with operation. Follow the instructions [below](#adding-and-deleting-mqtt-users) to remove and add users.
+
 ## Managing the Docker machine
 
 To check whether the machine and service are running:
