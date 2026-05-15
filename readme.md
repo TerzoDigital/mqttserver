@@ -209,6 +209,50 @@ To enable an MQTT client to use mTLS do the following:
 
 How these files are 'made available' will depend on the specific client.
 
+#### Generating keys and certificates for more users
+
+The **create-user-cert.sh** script is provided to allow the easy generation of further client certificates. The syntax for using the script is as follows:
+
+```
+sudo ./create-user-cert <cert-name> [expirydays]
+```
+
+Where:
+
+- sudo must be used to allow the script to write into the certificates folder and change the permissions of the generated file.
+- "cert-name" is mandatory and is the name that will be used for:
+    - the certificate file
+    - the private key file
+    - The Cannonical Name (CN) within the certificate. This can be used to identify the user to the MQTT broker.
+- "expirydays" is the number of days after which the certificate will expire. This is optional and by default this is 365 days.
+
+The contenst of the certificate can be examined in human readable format by using:
+
+```
+openssl x509 -in cert/<cert-name>.crt -noout -text
+```
+
+The output of that command will include something like:
+
+```
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number:
+            46:18:cb:6a:cf:08:16:e9:e9:0f:32:0d:cc:c2:d9:9b:16:c9:ab:2b
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: CN = Mosquitto-CA
+        Validity
+            Not Before: May 15 16:11:27 2026 GMT
+            Not After : Feb  8 16:11:27 2029 GMT
+        Subject: CN = test4
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+```
+
+Which gives the CN of the certificate (*Subject: CN = test4*, in this case) and the actual expiry date (*Not After: Feb  8 16:11:27 2029 GMT* in this case).
+
 ### Using TLS with a publically signed certificate
 
 Locally signed certificates may be the preferred option for some users who wish to be in full control of their PKI (Private Key Infrastructure). In some cases though, users may wish to use publically signed certificates. These are certificates which are signed through a chain of CAs (Certificate Authorities) where the head of that chain is a publically well known and trusted CA. The certificates for such trusted CAs are often built into operating systems. To validate the certificate being offered, a system checks that the certificate is correctly signed by its CA, that the CAs ceritificate is correctly signed by the next CAs certificate, and so on until the last certificate is the one built into the operating system. This is exactly how secure web pages (HTTPS) work with your browser, although there is a host of detail missing from the description above! Suffice to say that users may select to use a publically signed certificate and this section describes how that can be done.
