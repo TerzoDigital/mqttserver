@@ -14,6 +14,7 @@ The following files are included in the folder:
 - **generate-certs.sh** A script to generate certificates within a *certs* folder.
 - **initial-setup.sh** A script to perform the initial setup of the MQTT server.
 - **manage-mqtt-user.sh** A script to allow the addition or removal of MQTT users.
+- **create-user-cert.sh** A script to allow the creation of an additional users certificate and key.
 - **readme.md** This file.
 - **config/mosquitto.conf** The Mosquitto configuration file.
 - **config/passwd_file** A password file for the Mosquitto broker.
