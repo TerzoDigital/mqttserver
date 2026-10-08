@@ -68,12 +68,12 @@ docker compose ps
 
 To view the logs of the machine:
 ```
-docker compose logs -f mosquitto
+docker compose logs -ft mosquitto
 ```
-Using *CTRL-C* to end the follow of the logs. Or do not use the -f if you do not want to follow. If the logs are long then the entire set of logs will be listed before you get to the end. If you would prefer to just say the last 10 lines of logs then follow, use the command:
+Using *CTRL-C* to end the follow of the logs. Or do not use the ```-f``` if you do not want to follow. The ```-t``` is used to print the docker log timestamp as timestamps are turned off in the mosquitto logs to prevent repetition. If the logs are long then the entire set of logs will be listed before you get to the end. If you would prefer to just say the last 10 lines of logs then follow, use the command:
 
 ```
-docker compose logs -f --tail 10 mosquitto
+docker compose logs -ft --tail 10 mosquitto
 ```
 
 To examine the logs, change config files or view certificates on the docker container, log onto the container with:
@@ -100,6 +100,11 @@ If you have changed config or need to restart the broker then the service can be
 
 ```
 docker compose restart mosquitto
+```
+
+To force a rebuild of the container use the following:
+```
+docker compose up --force-recreate
 ```
 
 ## Changing the broker configuration
@@ -361,6 +366,7 @@ docker compose restart mosquitto
 >[!WARNING]
 >The certificates generated above will expire! The exprity date is given in the message you receive back from Certbot. You will need to rerun the same command before the expiry date to ensure that a valid certificate is available, you will also need to recopy the updated certificates to the certs folder as instructed above. A further update to this readme file will address how we can deal with expiring certificates.
 
+# Issues Addressed
 
 ## Issues in initial setup
 
@@ -379,4 +385,35 @@ To change the permiisions and ownership of all files within a folder and the fol
 ```
 sudo chown -R 1883:1883 foldername
 ```
+
+## Issues with logging
+
+Initial versions of the Mosquitto configuration file sent logs to both a local file (located in a mounted volume) and stdout. The log information going to stdout was used when docker shows logs. DOcker did not manage the size of the log file created by Mosquitto and there is no setting in the Mosquitto configuration file that would allow us to control that, for instance having a maximum file size and number of files and cycling through them. As such without any maintenance the log file eventually became so big that it filled storage on the host and thngs stopped working.
+
+The current version removes the file logging and relies on Mosquitto logging to stdout and docker managing those logs. Docker is configured to use its json-file logging driver with file rotation, permitting 3 files of 10 MBytes each, giving a total store of log files of 30M Bytes.
+
+The full size of all the log messages in use can be checked using:
+```
+docker logs mosquitto 2>&1 | wc -c | numfmt --to=iec
+```
+Note that the file sizes on disk may be 1.5 to 3 times bigger as each log line is wrapped in JSON by the docker logging engine. The reported number above is the file size on disk, so the logged messages will be smaller than that size. Monitoring the number returned above would show a size increasing from 0 to 30MB which would then drop to 20MB and regrow to 30MB repeatedely as log files are rotated.
+
+Logging retention is dealt with in the following ways depending upon the command used with ```docker compose```:
+
+| Command | Logs |
+| ------- | ---- |
+|```restart```, or ```stop``` then ```start```|Logs are kept and continue on restart|
+|Automatic restarts because of ```restart: unless-stopped```|Logs are kept and continue on restart|
+|```down``` then ```up```|Logs are deleted and start afresh|
+|```up -d``` after changing compose.yml or pulling a new image|Logs are deleted because the container is recreated|
+|```up -d``` with nothing changed|Logs are kept because the container is left alone|
+
+If you want to keep a copy of the logs before they are removed then use the command below:
+
+```
+docker compose logs --no-color > mosquitto-$(date +%F).log
+```
+
+> [!IMPORTANT]
+>Timestamps have been turned off in the Mosquitto logs as the docker logs also store an exact timestamp. Listing the logs will not show that timestamp by default. Use the ```-t``` option to ensure the docker timestamp is shown.
 

@@ -12,8 +12,12 @@ services:
       - ./config:/mosquitto/config
       - ./certs:/mosquitto/certs
       - ./data:/mosquitto/data
-      - ./log:/mosquitto/log
     user: mosquitto
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - mosquitto
 
