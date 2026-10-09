@@ -414,6 +414,25 @@ If you want to keep a copy of the logs before they are removed then use the comm
 docker compose logs --no-color > mosquitto-$(date +%F).log
 ```
 
-> [!IMPORTANT]
->Timestamps have been turned off in the Mosquitto logs as the docker logs also store an exact timestamp. Listing the logs will not show that timestamp by default. Use the ```-t``` option to ensure the docker timestamp is shown.
+Timestamps have been turned off in the Mosquitto logs as the docker logs also store an exact timestamp. Listing the logs will not show that timestamp by default. Use the ```-t``` option to ensure the docker timestamp is shown.
 
+### Viewing the logs
+
+A tail command is supported by docker compose logs, use the following to view the last 50 lines of the log.
+```
+docker compose logs --tail 50 mosquitto
+```
+The logs can also be followed using the following.
+```
+docker compose logs --tail 50 -f mosquitto
+```
+As docker compose does not support head, one has to combine docker logs with the head command to see the start of the log file.
+```
+docker compose logs mosquitto 2>&1 | head -50
+```
+The options since and until can also be combined with docker compose to get logs at certain times. For example.
+```
+docker compose logs --since 1h
+docker compose logs --since 2026-10-09T08:00Z --until 2026-10-09T09:00Z
+```
+These options also work with docker logs if the name of the machine "mosquitto" is appended. Be aware that docker timestamps are in UTC, hence the addition of the Z to the end of the actual times to force UTC timezone. Without the Z the times are interpreted as local times.
